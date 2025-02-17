@@ -1,32 +1,302 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Piggy Box</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>برنامج إدارة الديون</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            color: #333;
+            margin: 20px;
+            padding: 0;
+        }
+        h1 {
+            text-align: center;
+            color: #007bff;
+            font-size: 24px;
+        }
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+        }
+        .list-item {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .list-item button {
+            width: auto;
+            margin-left: 5px;
+        }
+        .total {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #555;
+            text-align: center;
+        }
+        #search {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        canvas {
+            margin-top: 20px;
+        }
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 20px;
+            }
+            input, button {
+                font-size: 14px;
+            }
+            .list-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .list-item button {
+                margin-top: 5px;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <div id="login" class="login">
-            <h2>Login</h2>
-            <input type="text" id="username" placeholder="Enter username">
-            <button onclick="login()">Login</button>
+        <h1>برنامج إدارة الديون</h1>
+
+        <!-- إضافة شخص جديد -->
+        <div>
+            <label for="name">الاسم:</label>
+            <input type="text" id="name" placeholder="ادخل الاسم">
+            <label for="amount">المبلغ:</label>
+            <input type="number" id="amount" placeholder="ادخل المبلغ">
+            <button onclick="addDebtor()">إضافة</button>
         </div>
-        <div id="piggy-box-container" class="piggy-box-container">
-            <div class="piggy-box">
-                <div class="slot"></div>
-            </div>
-            <div class="controls">
-                <input type="number" id="amount" placeholder="Enter amount" min="1">
-                <button class="save" onclick="saveMoney()">Save Money</button>
-                <button class="withdraw" onclick="withdrawMoney()">Withdraw Money</button>
-            </div>
-            <div class="balance">
-                Balance: $<span id="balance">0</span>
-            </div>
+
+        <!-- خاصية البحث -->
+        <div>
+            <label for="search">ابحث عن اسم:</label>
+            <input type="text" id="search" placeholder="ابحث هنا..." oninput="filterList()">
         </div>
+
+        <!-- قائمة الأشخاص الذين عليهم ديون -->
+        <h2>قائمة الديون</h2>
+        <div id="debtList"></div>
+
+        <!-- قائمة الأشخاص الذين دفعوا -->
+        <h2>قائمة الذين دفعوا</h2>
+        <div id="paidList"></div>
+
+        <!-- الإجماليات -->
+        <div class="total">
+            <p>إجمالي الديون: <span id="totalDebt">0</span></p>
+            <p>إجمالي المدفوع: <span id="totalPaid">0</span></p>
+        </div>
+
+        <!-- الرسم البياني -->
+        <canvas id="debtChart" width="400" height="200"></canvas>
     </div>
-    <script src="script.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // قوائم تخزين البيانات
+        let debtors = [];
+        let paidDebtors = [];
+
+        // تحميل البيانات من localStorage عند فتح الصفحة
+        function loadData() {
+            debtors = JSON.parse(localStorage.getItem("debtors")) || [];
+            paidDebtors = JSON.parse(localStorage.getItem("paidDebtors")) || [];
+            updateLists();
+            updateChart();
+        }
+
+        // حفظ البيانات في localStorage
+        function saveData() {
+            localStorage.setItem("debtors", JSON.stringify(debtors));
+            localStorage.setItem("paidDebtors", JSON.stringify(paidDebtors));
+        }
+
+        // تابع لإضافة شخص جديد إلى قائمة الديون
+        function addDebtor() {
+            const name = document.getElementById("name").value.trim();
+            const amount = parseFloat(document.getElementById("amount").value);
+
+            if (name && amount > 0) {
+                debtors.push({ name, amount });
+                updateLists();
+                showAlert(`تمت إضافة ${name} بنجاح!`);
+                document.getElementById("name").value = "";
+                document.getElementById("amount").value = "";
+            } else {
+                showAlert("يرجى إدخال اسم ومبلغ صحيح.");
+            }
+        }
+
+        // تابع لنقل شخص من قائمة الديون إلى قائمة الذين دفعوا
+        function markAsPaid(index) {
+            const debtor = debtors.splice(index, 1)[0];
+            debtor.paidDate = new Date().toLocaleDateString(); // إضافة تاريخ الدفع
+            paidDebtors.push(debtor);
+            updateLists();
+            showAlert(`${debtor.name} تم نقله إلى قائمة الذين دفعوا.`);
+        }
+
+        // تابع لتعديل المبلغ المستحق على شخص
+        function editDebtor(index) {
+            const newAmount = prompt("أدخل المبلغ الجديد:");
+            if (newAmount !== null && !isNaN(newAmount) && parseFloat(newAmount) >= 0) {
+                debtors[index].amount = parseFloat(newAmount);
+                updateLists();
+                showAlert("تم تعديل المبلغ بنجاح!");
+            } else {
+                showAlert("يرجى إدخال مبلغ صحيح.");
+            }
+        }
+
+        // تابع لحذف شخص من قائمة الديون
+        function deleteDebtor(index) {
+            const debtor = debtors.splice(index, 1)[0];
+            updateLists();
+            showAlert(`${debtor.name} تم حذفه من قائمة الديون.`);
+        }
+
+        // تابع لتعديل المبلغ المدفوع
+        function editPaid(index) {
+            const newAmount = prompt("أدخل المبلغ المدفوع الجديد:");
+            if (newAmount !== null && !isNaN(newAmount) && parseFloat(newAmount) >= 0) {
+                paidDebtors[index].amount = parseFloat(newAmount);
+                updateLists();
+                showAlert("تم تعديل المبلغ المدفوع بنجاح!");
+            } else {
+                showAlert("يرجى إدخال مبلغ صحيح.");
+            }
+        }
+
+        // تابع لحذف شخص من قائمة الذين دفعوا
+        function deletePaid(index) {
+            const paid = paidDebtors.splice(index, 1)[0];
+            updateLists();
+            showAlert(`${paid.name} تم حذفه من قائمة الذين دفعوا.`);
+        }
+
+        // تحديث القوائم والإجماليات
+        function updateLists() {
+            const debtList = document.getElementById("debtList");
+            const paidList = document.getElementById("paidList");
+
+            // مسح القوائم الحالية
+            debtList.innerHTML = "";
+            paidList.innerHTML = "";
+
+            // تحديث قائمة الديون
+            debtors.forEach((debtor, index) => {
+                const item = `<div class="list-item">
+                    <div>${debtor.name} - ${debtor.amount}</div>
+                    <div>
+                        <button onclick="markAsPaid(${index})">دفع</button>
+                        <button onclick="editDebtor(${index})">تعديل</button>
+                        <button onclick="deleteDebtor(${index})">حذف</button>
+                    </div>
+                </div>`;
+                debtList.innerHTML += item;
+            });
+
+            // تحديث قائمة الذين دفعوا
+            paidDebtors.forEach((paid, index) => {
+                const item = `<div class="list-item">
+                    <div>${paid.name} - ${paid.amount} (${paid.paidDate || '-'})</div>
+                    <div>
+                        <button onclick="editPaid(${index})">تعديل</button>
+                        <button onclick="deletePaid(${index})">حذف</button>
+                    </div>
+                </div>`;
+                paidList.innerHTML += item;
+            });
+
+            // تحديث الإجماليات
+            const totalDebt = debtors.reduce((sum, debtor) => sum + debtor.amount, 0);
+            const totalPaid = paidDebtors.reduce((sum, paid) => sum + paid.amount, 0);
+            document.getElementById("totalDebt").textContent = totalDebt;
+            document.getElementById("totalPaid").textContent = totalPaid;
+
+            // حفظ البيانات وتحديث الرسم البياني
+            saveData();
+            updateChart();
+        }
+
+        // تحديث الرسم البياني
+        function updateChart() {
+            const totalDebt = debtors.reduce((sum, debtor) => sum + debtor.amount, 0);
+            const totalPaid = paidDebtors.reduce((sum, paid) => sum + paid.amount, 0);
+
+            const ctx = document.getElementById('debtChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['الديون المتبقية', 'المبالغ المدفوعة'],
+                    datasets: [{
+                        data: [totalDebt, totalPaid],
+                        backgroundColor: ['#ff6384', '#36a2eb']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        }
+                    }
+                }
+            });
+        }
+
+        // خاصية البحث والتصفية
+        function filterList() {
+            const query = document.getElementById("search").value.toLowerCase();
+            const items = document.querySelectorAll("#debtList .list-item");
+
+            items.forEach(item => {
+                const name = item.textContent.toLowerCase();
+                if (name.includes(query)) {
+                    item.style.display = "";
+                } else {
+                    item.style.display = "none";
+                }
+            });
+        }
+
+        // عرض تنبيهات
+        function showAlert(message) {
+            alert(message);
+        }
+
+        // تحميل البيانات عند فتح الصفحة
+        window.onload = loadData;
+    </script>
 </body>
 </html>
